@@ -14,10 +14,11 @@ import jax.numpy as jnp
 from jax.scipy import special
 
 from numpyro.contrib.hsgp.laplacian import sqrt_eigenvalues
+from numpyro.contrib.hsgp.util import ARRAY_TYPE
 
 
 def spectral_density_squared_exponential(
-    dim: int, w: ArrayImpl, alpha: float, length: float
+    dim: int, w: ArrayImpl, alpha: float, length: float | ArrayImpl
 ) -> float:
     """
     Spectral density of the squared exponential kernel.
@@ -40,12 +41,16 @@ def spectral_density_squared_exponential(
     :param int dim: dimension
     :param ArrayImpl w: frequency
     :param float alpha: amplitude
-    :param float length: length scale
+    :param float | ArrayImpl length: length scale, if an array, it's trailing dimension must have be of size `dim`
     :return: spectral density value
     :rtype: float
     """
-    c = alpha * (jnp.sqrt(2 * jnp.pi) * length) ** dim
-    e = jnp.exp(-0.5 * (length**2) * jnp.dot(w, w))
+    if isinstance(length, ARRAY_TYPE) and length.ndim > 0 and length.shape[-1] != dim:
+        raise ValueError(
+            f"Trailing dimension of length must be equal to the dimension of the space: {dim}"
+        )
+    c = alpha * (jnp.sqrt(2 * jnp.pi)) ** dim
+    e = jnp.prod(length * jnp.exp(-0.5 * (length**2) * w**2), axis=-1)
     return c * e
 
 
