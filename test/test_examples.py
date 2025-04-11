@@ -7,6 +7,8 @@ import sys
 
 import pytest
 
+import jax
+
 TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 EXAMPLES_DIR = os.path.join(os.path.dirname(TESTS_DIR), "examples")
 
@@ -85,4 +87,5 @@ def test_cpu(example):
     example = example.split()
     filename, args = example[0], example[1:]
     filename = os.path.join(EXAMPLES_DIR, filename)
+    jax.clear_caches()
     check_call([sys.executable, filename] + args)
