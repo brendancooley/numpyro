@@ -1,8 +1,9 @@
 # Copyright Contributors to the Pyro project.
 # SPDX-License-Identifier: Apache-2.0
 
-from collections import namedtuple
+from collections.abc import Callable
 from functools import partial
+from typing import Any, NamedTuple
 import warnings
 
 import tqdm
@@ -15,40 +16,52 @@ import jax.numpy as jnp
 from numpyro.distributions import constraints
 from numpyro.distributions.transforms import biject_to
 from numpyro.handlers import replay, seed, substitute, trace
+from numpyro.infer.elbo import ELBO
 from numpyro.infer.util import helpful_support_errors, transform_fn
 from numpyro.optim import _NumPyroOptim, optax_to_numpyro
 from numpyro.util import find_stack_level
 
-SVIState = namedtuple("SVIState", ["optim_state", "mutable_state", "rng_key"])
-"""
-A :func:`~collections.namedtuple` consisting of the following fields:
- - **optim_state** - current optimizer's state.
- - **mutable_state** - extra state to store values of `"mutable"` sites
- - **rng_key** - random number generator seed used for the iteration.
-"""
+
+class SVIState(NamedTuple):
+    """State object used in SVI training to keep track of the optimizer state, mutable state, and random number generator.
+
+    :param optim_state: Current optimizer's state.
+    :param mutable_state: Extra state to store values of `"mutable"` sites.
+    :param rng_key: Random number generator seed used for the iteration.
+    """
+
+    optim_state: optimizers.OptimizerState
+    mutable_state: dict[str, jax.Array] | None
+    rng_key: jax.Array
 
 
-SVIRunResult = namedtuple("SVIRunResult", ["params", "state", "losses"])
-"""
-A :func:`~collections.namedtuple` consisting of the following fields:
- - **params** - the optimized parameters.
- - **state** - the last :data:`SVIState`
- - **losses** - the losses collected at every step.
-"""
+class SVIRunResult(NamedTuple):
+    """
+    A :func:`~collections.namedtuple` consisting of the following fields:
+    - **params** - the optimized parameters.
+    - **state** - the last :data:`SVIState`
+    - **losses** - the losses collected at every step.
+    """
+
+    params: dict[str, jax.Array]
+    state: SVIState
+    losses: jax.Array
 
 
 def _make_loss_fn(
-    elbo,
-    rng_key,
-    constrain_fn,
-    model,
-    guide,
-    args,
-    kwargs,
-    static_kwargs,
-    mutable_state=None,
-):
-    def loss_fn(params):
+    elbo: ELBO,
+    rng_key: jax.Array,
+    constrain_fn: Callable[[dict[str, jax.Array]], dict[str, jax.Array]],
+    model: Callable,
+    guide: Callable,
+    args: tuple,
+    kwargs: dict[str, Any],
+    static_kwargs: dict[str, Any],
+    mutable_state: dict[str, jax.Array] | None,
+) -> Callable[[dict[str, jax.Array]], tuple[jax.Array, dict[str, jax.Array] | None]]:
+    def loss_fn(
+        params: dict[str, jax.Array],
+    ) -> tuple[jax.Array, dict[str, jax.Array] | None]:
         params = constrain_fn(params)
         if mutable_state is not None:
             params.update(jax.lax.stop_gradient(mutable_state))
@@ -67,7 +80,7 @@ def _make_loss_fn(
     return loss_fn
 
 
-class SVI(object):
+class SVI:
     """
     Stochastic Variational Inference given an ELBO loss objective.
 
